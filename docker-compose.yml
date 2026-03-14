@@ -1,0 +1,12 @@
+services:
+  replayos:
+    build: .
+    container_name: replayos
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./notes:/app/notes
+      - ./.env:/app/.env:ro
+    restart: unless-stopped

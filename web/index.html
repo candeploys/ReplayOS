@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReplayOS Control Panel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <h1>ReplayOS Control Panel</h1>
+        <p>Timeline, AI Ask, GhostRun actions, connector sync, retention, and alerts.</p>
+      </header>
+
+      <section class="card auth-card">
+        <h2>Auth</h2>
+        <label>API Key</label>
+        <input id="apiKey" type="password" placeholder="Paste REPLAYOS_API_KEYS token" />
+        <button id="saveKeyBtn">Save Key</button>
+        <span id="saveMsg"></span>
+      </section>
+
+      <section class="grid two-col">
+        <article class="card">
+          <h2>Status</h2>
+          <button id="refreshStatusBtn">Refresh</button>
+          <pre id="statusOut"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Alerts</h2>
+          <button id="refreshAlertsBtn">Refresh</button>
+          <pre id="alertsOut"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="card">
+          <h2>Ask Timeline</h2>
+          <textarea id="askInput" rows="3" placeholder="Summarize my timeline briefly"></textarea>
+          <button id="askBtn">Ask</button>
+          <pre id="askOut"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Recent Timeline</h2>
+          <button id="refreshTimelineBtn">Refresh</button>
+          <pre id="timelineOut"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="card">
+          <h2>Create Note (GhostRun)</h2>
+          <input id="noteTitle" placeholder="Title" />
+          <textarea id="noteBody" rows="4" placeholder="Body"></textarea>
+          <div class="row">
+            <button id="noteDryBtn">Dry Run</button>
+            <button id="noteExecBtn">Execute</button>
+          </div>
+          <pre id="noteOut"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Undo</h2>
+          <input id="undoToken" placeholder="Undo token" />
+          <button id="undoBtn">Undo</button>
+          <pre id="undoOut"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="card">
+          <h2>Connectors</h2>
+          <div class="row">
+            <button id="listConnectorsBtn">List</button>
+            <button id="syncConnectorsBtn">Sync</button>
+          </div>
+          <pre id="connectorsOut"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Data Policy</h2>
+          <button id="exportBtn">Export Data</button>
+          <div class="row">
+            <input id="retentionDays" type="number" min="1" value="30" />
+            <button id="applyRetentionBtn">Apply Retention</button>
+          </div>
+          <pre id="dataOut"></pre>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Metrics</h2>
+        <button id="metricsBtn">Refresh Metrics</button>
+        <pre id="metricsOut"></pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

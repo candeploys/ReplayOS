@@ -1,0 +1,15 @@
+[project]
+name = "replayos"
+version = "0.4.0"
+description = "Local-first memory timeline and safe action runtime"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "ReplayOS Contributors" }]
+dependencies = []
+
+[project.scripts]
+replayos = "replayos.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["replayos*"]
