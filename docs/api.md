@@ -28,11 +28,27 @@ Web UI dashboard.
 ### `POST /api/events`
 Ingest timeline event.
 
-### `GET /api/events/recent?limit=20`
-Fetch latest events.
+Request:
+```json
+{
+  "source": "manual",
+  "title": "Launch Plan",
+  "content": "Ship ReplayOS production baseline",
+  "metadata": {"priority": "high"}
+}
+```
 
-### `GET /api/search?q=...&limit=10`
-Full-text timeline search.
+### `GET /api/events/recent?limit=20&source=demo&from_ts=...&to_ts=...`
+Fetch latest events with optional filters:
+- `source`
+- `from_ts` (ISO8601)
+- `to_ts` (ISO8601)
+
+### `GET /api/events/by-id?id=123`
+Fetch a single event by ID.
+
+### `GET /api/search?q=...&limit=10&source=...&from_ts=...&to_ts=...`
+Full-text timeline search with optional source/time filters.
 
 ## Ask
 
@@ -53,15 +69,15 @@ Response includes:
 ## Actions
 
 ### `POST /api/actions/create-note`
-GhostRun and execute path.
+GhostRun + execute path.
 
 ### `POST /api/actions/undo`
-Undo action by `undo_token`.
+Undo by `undo_token`.
 
 ## Data Policy
 
 ### `GET /api/data/export?event_limit=10000&action_limit=10000`
-Export events/actions as JSON.
+Export events/actions/connector runs as JSON.
 
 ### `POST /api/data/delete`
 Delete by cutoff timestamp or all (if policy allows).
@@ -90,7 +106,11 @@ Current error-rate alarm status.
 ## Connectors
 
 ### `GET /api/connectors`
-List connectors and configured status.
+List connectors with:
+- `configured`
+- `required_env_keys`
+- `missing_env_keys`
+- `last_run`
 
 ### `POST /api/connectors/sync`
 Sync configured connectors into timeline.
@@ -99,6 +119,9 @@ Request:
 ```json
 {"limit_per_connector":20}
 ```
+
+### `GET /api/connectors/runs?limit=20&connector_id=slack`
+List recent connector sync runs, optionally filtered by connector.
 
 ## Status Codes
 

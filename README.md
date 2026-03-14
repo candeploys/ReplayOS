@@ -62,10 +62,11 @@ ReplayOS is designed for teams and power users who want:
 
 ### Super-project layer
 
-- automatic macOS capture daemon for passive timeline ingestion
+- automatic macOS capture daemon (privacy mode + include/exclude app filters)
+- browser history bootstrap import (`safari/chrome/brave/edge`)
 - built-in connectors: Gmail (IMAP), Slack, Notion
-- connector plugin SDK + dynamic plugin loading
-- browser dashboard for timeline, ask, actions, connectors, retention, and metrics
+- connector plugin SDK + dynamic plugin loading + connector doctor
+- browser dashboard with timeline filters, ask reference cards, connector sync runs, and GhostRun visibility
 - one-command demo script + demo walkthrough
 
 ---
@@ -128,7 +129,10 @@ replayos/
     plugins.md
   plugins/
     example_connector.py
+    local_json_connector.py
+    rss_connector.py
   replayos/
+    browser_history.py
     capture_daemon.py
     cli.py
     config.py
@@ -297,11 +301,12 @@ Route:
 Includes panels for:
 - health/status
 - alert state
-- timeline recent items
-- ask endpoint
-- GhostRun note action + execute
+- timeline recent items with source/time filters
+- ask endpoint with clickable reference cards
+- GhostRun note action + execute + last action state
 - undo token action
-- connector list + sync
+- connector list + sync + doctor view
+- connector sync run history
 - export + retention apply
 - metrics viewer
 
@@ -334,7 +339,21 @@ curl -sS -X POST http://127.0.0.1:8787/api/ask \
 ### Search
 
 ```bash
-curl -sS "http://127.0.0.1:8787/api/search?q=ReplayOS&limit=10" \
+curl -sS "http://127.0.0.1:8787/api/search?q=ReplayOS&limit=10&source=demo" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Recent timeline with filters
+
+```bash
+curl -sS "http://127.0.0.1:8787/api/events/recent?limit=25&source=slack&from_ts=2026-03-01T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Fetch event by id
+
+```bash
+curl -sS "http://127.0.0.1:8787/api/events/by-id?id=1" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -362,6 +381,13 @@ curl -sS -X POST http://127.0.0.1:8787/api/actions/undo \
 ```bash
 curl -sS http://127.0.0.1:8787/metrics
 curl -sS http://127.0.0.1:8787/api/admin/alerts -H "Authorization: Bearer $TOKEN"
+```
+
+### Connector run history
+
+```bash
+curl -sS "http://127.0.0.1:8787/api/connectors/runs?limit=20" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Data policy endpoints
@@ -397,6 +423,7 @@ List and sync:
 
 ```bash
 make list-connectors
+make connector-doctor
 make sync-connectors
 ```
 
@@ -409,6 +436,8 @@ Connector environment variables in `.env.example`:
 
 - plugin docs: `docs/plugins.md`
 - example plugin: `plugins/example_connector.py`
+- rss plugin: `plugins/rss_connector.py`
+- local json plugin: `plugins/local_json_connector.py`
 
 A plugin provides `build_connector()` returning a `BaseConnector` implementation.
 
@@ -422,10 +451,26 @@ Run automatic foreground-window capture:
 make capture-daemon
 ```
 
-Or with screenshots:
+Privacy-first capture example:
 
 ```bash
-python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon --capture-screenshot
+python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon \
+  --privacy-mode \
+  --include-app "Google Chrome" \
+  --exclude-app "1Password"
+```
+
+With screenshots:
+
+```bash
+python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon \
+  --capture-screenshot --screenshot-dir captures
+```
+
+Bootstrap timeline from browser history:
+
+```bash
+make import-browser-history
 ```
 
 Detailed notes:
@@ -563,8 +608,10 @@ python3 -m pip install --upgrade certifi
 ### Connectors not syncing
 
 - run `make list-connectors`
+- run `make connector-doctor`
 - confirm connector env vars are set
 - run `make sync-connectors`
+- inspect `GET /api/connectors/runs` for per-connector errors
 
 ---
 

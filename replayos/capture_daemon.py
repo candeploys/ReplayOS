@@ -15,6 +15,9 @@ def run_capture_daemon(
     interval_seconds: int = 15,
     capture_screenshot: bool = False,
     screenshot_dir: Path | None = None,
+    privacy_mode: bool = False,
+    include_apps: tuple[str, ...] = (),
+    exclude_apps: tuple[str, ...] = (),
 ) -> None:
     if interval_seconds <= 0:
         raise ValueError("interval_seconds must be positive")
@@ -25,12 +28,30 @@ def run_capture_daemon(
 
     print(f"Capture daemon started. Target API: {api_base_url}")
     print(f"Interval: {interval_seconds}s")
+    print(f"Privacy mode: {'on' if privacy_mode else 'off'}")
+    if include_apps:
+        print(f"Include apps: {', '.join(include_apps)}")
+    if exclude_apps:
+        print(f"Exclude apps: {', '.join(exclude_apps)}")
     if capture_screenshot:
         print(f"Screenshots enabled: {screenshot_dir}")
 
+    include_set = _normalize_app_filters(include_apps)
+    exclude_set = _normalize_app_filters(exclude_apps)
+
     while True:
         try:
-            payload = _build_capture_event(capture_screenshot=capture_screenshot, screenshot_dir=screenshot_dir)
+            payload, skipped_reason = _build_capture_event(
+                capture_screenshot=capture_screenshot,
+                screenshot_dir=screenshot_dir,
+                privacy_mode=privacy_mode,
+                include_apps=include_set,
+                exclude_apps=exclude_set,
+            )
+            if payload is None:
+                print(f"[{datetime.now(timezone.utc).isoformat()}] Capture skipped: {skipped_reason}")
+                time.sleep(interval_seconds)
+                continue
             _post_event(api_base_url=api_base_url, api_key=api_key, payload=payload)
             print(f"[{datetime.now(timezone.utc).isoformat()}] Captured: {payload['title']}")
         except Exception as exc:  # noqa: BLE001
@@ -39,32 +60,38 @@ def run_capture_daemon(
         time.sleep(interval_seconds)
 
 
-def _build_capture_event(capture_screenshot: bool, screenshot_dir: Path) -> dict:
-    app_name = _run_osascript(
-        'tell application "System Events" to get name of first application process whose frontmost is true'
-    ).strip()
-    window_title = _run_osascript(
-        'tell application "System Events" to tell (first application process whose frontmost is true) to get name of front window'
-    ).strip()
+def _build_capture_event(
+    capture_screenshot: bool,
+    screenshot_dir: Path,
+    privacy_mode: bool,
+    include_apps: set[str],
+    exclude_apps: set[str],
+) -> tuple[dict | None, str | None]:
+    app_name = _front_app_name() or "Unknown"
+    app_key = app_name.strip().lower()
+    if include_apps and app_key not in include_apps:
+        return None, f"front app '{app_name}' is not in include list"
+    if app_key in exclude_apps:
+        return None, f"front app '{app_name}' is excluded"
 
-    browser_url = ""
-    if app_name == "Safari":
-        browser_url = _run_osascript('tell application "Safari" to get URL of front document').strip()
-    elif app_name == "Google Chrome":
-        browser_url = _run_osascript('tell application "Google Chrome" to get URL of active tab of front window').strip()
+    window_title = _front_window_title() or "(untitled window)"
+    browser_url = _front_browser_url(app_name)
 
     metadata = {
         "connector": "capture_daemon",
         "front_app": app_name,
-        "window_title": window_title,
+        "privacy_mode": bool(privacy_mode),
     }
 
-    if browser_url:
-        metadata["url"] = browser_url
+    safe_window_title = "[redacted]" if privacy_mode else window_title
+    metadata["window_title"] = safe_window_title
 
-    content_parts = [f"Front app: {app_name}", f"Window: {window_title}"]
-    if browser_url:
+    content_parts = [f"Front app: {app_name}", f"Window: {safe_window_title}"]
+    if browser_url and not privacy_mode:
+        metadata["url"] = browser_url
         content_parts.append(f"URL: {browser_url}")
+    elif browser_url and privacy_mode:
+        content_parts.append("URL: [redacted]")
 
     if capture_screenshot:
         file_name = f"capture-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.png"
@@ -77,7 +104,42 @@ def _build_capture_event(capture_screenshot: bool, screenshot_dir: Path) -> dict
         "title": f"Active window: {app_name}",
         "content": "\n".join(content_parts),
         "metadata": metadata,
+    }, None
+
+
+def _front_app_name() -> str:
+    return _run_osascript(
+        'tell application "System Events" to get name of first application process whose frontmost is true'
+    ).strip()
+
+
+def _front_window_title() -> str:
+    return _run_osascript(
+        'tell application "System Events" to tell (first application process whose frontmost is true) to get name of front window'
+    ).strip()
+
+
+def _front_browser_url(app_name: str) -> str:
+    scripts = {
+        "safari": 'tell application "Safari" to get URL of front document',
+        "google chrome": 'tell application "Google Chrome" to get URL of active tab of front window',
+        "brave browser": 'tell application "Brave Browser" to get URL of active tab of front window',
+        "microsoft edge": 'tell application "Microsoft Edge" to get URL of active tab of front window',
+        "arc": 'tell application "Arc" to get URL of active tab of front window',
     }
+    script = scripts.get(app_name.strip().lower())
+    if not script:
+        return ""
+    return _run_osascript(script).strip()
+
+
+def _normalize_app_filters(values: tuple[str, ...]) -> set[str]:
+    cleaned: set[str] = set()
+    for item in values:
+        text = str(item).strip().lower()
+        if text:
+            cleaned.add(text)
+    return cleaned
 
 
 def _post_event(api_base_url: str, api_key: str, payload: dict) -> None:

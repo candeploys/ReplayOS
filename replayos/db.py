@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 
 
-DB_SCHEMA_VERSION = 1
+DB_SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -19,6 +19,16 @@ class EventRecord:
     title: str
     content: str
     metadata: dict
+
+
+@dataclass
+class ConnectorRunRecord:
+    id: int
+    ts: str
+    connector_id: str
+    status: str
+    synced_count: int
+    error_message: str | None
 
 
 class ReplayDB:
@@ -84,6 +94,21 @@ class ReplayDB:
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_ts ON actions(ts DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status)")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS connector_sync_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                connector_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                synced_count INTEGER NOT NULL,
+                error_message TEXT
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_connector_runs_ts ON connector_sync_runs(ts DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_connector_runs_connector ON connector_sync_runs(connector_id)")
 
         try:
             cur.execute(
@@ -186,7 +211,14 @@ class ReplayDB:
         self.conn.commit()
         return int(cur.lastrowid)
 
-    def search_events(self, query: str, limit: int = 10) -> list[EventRecord]:
+    def search_events(
+        self,
+        query: str,
+        limit: int = 10,
+        source: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+    ) -> list[EventRecord]:
         query = query.strip()
         if not query:
             return []
@@ -194,50 +226,115 @@ class ReplayDB:
         cur = self.conn.cursor()
         if self.fts_enabled:
             try:
-                cur.execute(
-                    """
-                    SELECT e.id, e.ts, e.source, e.title, e.content, e.metadata_json,
-                           bm25(events_fts) AS rank
-                    FROM events_fts
-                    JOIN events e ON e.id = events_fts.rowid
-                    WHERE events_fts MATCH ?
-                    ORDER BY rank
-                    LIMIT ?
-                    """,
-                    (query, limit),
-                )
+                sql = [
+                    "SELECT e.id, e.ts, e.source, e.title, e.content, e.metadata_json, bm25(events_fts) AS rank",
+                    "FROM events_fts",
+                    "JOIN events e ON e.id = events_fts.rowid",
+                    "WHERE events_fts MATCH ?",
+                ]
+                params: list[object] = [query]
+
+                if source:
+                    sql.append("AND e.source = ?")
+                    params.append(source)
+                if from_ts:
+                    sql.append("AND e.ts >= ?")
+                    params.append(from_ts)
+                if to_ts:
+                    sql.append("AND e.ts <= ?")
+                    params.append(to_ts)
+
+                sql.append("ORDER BY rank")
+                sql.append("LIMIT ?")
+                params.append(limit)
+
+                cur.execute("\n".join(sql), params)
             except sqlite3.OperationalError:
-                self._search_like(cur, query, limit)
+                self._search_like(cur, query, limit, source=source, from_ts=from_ts, to_ts=to_ts)
         else:
-            self._search_like(cur, query, limit)
+            self._search_like(cur, query, limit, source=source, from_ts=from_ts, to_ts=to_ts)
 
         return self._rows_to_events(cur.fetchall())
 
-    def _search_like(self, cur: sqlite3.Cursor, query: str, limit: int) -> None:
+    def _search_like(
+        self,
+        cur: sqlite3.Cursor,
+        query: str,
+        limit: int,
+        source: str | None,
+        from_ts: str | None,
+        to_ts: str | None,
+    ) -> None:
         wildcard = f"%{query}%"
-        cur.execute(
-            """
-            SELECT id, ts, source, title, content, metadata_json
-            FROM events
-            WHERE title LIKE ? OR content LIKE ?
-            ORDER BY ts DESC
-            LIMIT ?
-            """,
-            (wildcard, wildcard, limit),
-        )
+        sql = [
+            "SELECT id, ts, source, title, content, metadata_json",
+            "FROM events",
+            "WHERE (title LIKE ? OR content LIKE ?)",
+        ]
+        params: list[object] = [wildcard, wildcard]
+
+        if source:
+            sql.append("AND source = ?")
+            params.append(source)
+        if from_ts:
+            sql.append("AND ts >= ?")
+            params.append(from_ts)
+        if to_ts:
+            sql.append("AND ts <= ?")
+            params.append(to_ts)
+
+        sql.append("ORDER BY ts DESC")
+        sql.append("LIMIT ?")
+        params.append(limit)
+        cur.execute("\n".join(sql), params)
+
+    def list_events(
+        self,
+        limit: int = 20,
+        source: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+    ) -> list[EventRecord]:
+        cur = self.conn.cursor()
+        sql = [
+            "SELECT id, ts, source, title, content, metadata_json",
+            "FROM events",
+            "WHERE 1=1",
+        ]
+        params: list[object] = []
+        if source:
+            sql.append("AND source = ?")
+            params.append(source)
+        if from_ts:
+            sql.append("AND ts >= ?")
+            params.append(from_ts)
+        if to_ts:
+            sql.append("AND ts <= ?")
+            params.append(to_ts)
+        sql.append("ORDER BY ts DESC")
+        sql.append("LIMIT ?")
+        params.append(limit)
+        cur.execute("\n".join(sql), params)
+        return self._rows_to_events(cur.fetchall())
 
     def recent_events(self, limit: int = 20) -> list[EventRecord]:
+        return self.list_events(limit=limit)
+
+    def get_event_by_id(self, event_id: int) -> EventRecord | None:
         cur = self.conn.cursor()
         cur.execute(
             """
             SELECT id, ts, source, title, content, metadata_json
             FROM events
-            ORDER BY ts DESC
-            LIMIT ?
+            WHERE id = ?
+            LIMIT 1
             """,
-            (limit,),
+            (event_id,),
         )
-        return self._rows_to_events(cur.fetchall())
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return self._rows_to_events([row])[0]
 
     def export_data(self, event_limit: int = 10_000, action_limit: int = 10_000) -> dict:
         cur = self.conn.cursor()
@@ -283,12 +380,26 @@ class ReplayDB:
             for r in cur.fetchall()
         ]
 
+        connector_runs = [
+            {
+                "id": row.id,
+                "ts": row.ts,
+                "connector_id": row.connector_id,
+                "status": row.status,
+                "synced_count": row.synced_count,
+                "error_message": row.error_message,
+            }
+            for row in self.recent_connector_runs(limit=200)
+        ]
+
         return {
             "schema_version": self.get_schema_version(),
             "event_count": len(events),
             "action_count": len(actions),
+            "connector_run_count": len(connector_runs),
             "events": events,
             "actions": actions,
+            "connector_sync_runs": connector_runs,
         }
 
     def delete_before(self, before_ts: str) -> dict:
@@ -297,8 +408,14 @@ class ReplayDB:
         deleted_events = int(cur.rowcount)
         cur.execute("DELETE FROM actions WHERE ts < ?", (before_ts,))
         deleted_actions = int(cur.rowcount)
+        cur.execute("DELETE FROM connector_sync_runs WHERE ts < ?", (before_ts,))
+        deleted_connector_runs = int(cur.rowcount)
         self.conn.commit()
-        return {"deleted_events": deleted_events, "deleted_actions": deleted_actions}
+        return {
+            "deleted_events": deleted_events,
+            "deleted_actions": deleted_actions,
+            "deleted_connector_runs": deleted_connector_runs,
+        }
 
     def delete_all(self) -> dict:
         cur = self.conn.cursor()
@@ -306,8 +423,14 @@ class ReplayDB:
         deleted_events = int(cur.rowcount)
         cur.execute("DELETE FROM actions")
         deleted_actions = int(cur.rowcount)
+        cur.execute("DELETE FROM connector_sync_runs")
+        deleted_connector_runs = int(cur.rowcount)
         self.conn.commit()
-        return {"deleted_events": deleted_events, "deleted_actions": deleted_actions}
+        return {
+            "deleted_events": deleted_events,
+            "deleted_actions": deleted_actions,
+            "deleted_connector_runs": deleted_connector_runs,
+        }
 
     def log_action(self, action_type: str, payload: dict, status: str, undo_token: str) -> int:
         ts = datetime.now(timezone.utc).isoformat()
@@ -356,6 +479,53 @@ class ReplayDB:
             "status": str(row["status"]),
             "undo_token": str(row["undo_token"]),
         }
+
+    def log_connector_run(
+        self,
+        connector_id: str,
+        status: str,
+        synced_count: int,
+        error_message: str | None,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO connector_sync_runs (ts, connector_id, status, synced_count, error_message)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (ts, connector_id, status, synced_count, error_message),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def recent_connector_runs(self, limit: int = 20, connector_id: str | None = None) -> list[ConnectorRunRecord]:
+        cur = self.conn.cursor()
+        sql = [
+            "SELECT id, ts, connector_id, status, synced_count, error_message",
+            "FROM connector_sync_runs",
+            "WHERE 1=1",
+        ]
+        params: list[object] = []
+        if connector_id:
+            sql.append("AND connector_id = ?")
+            params.append(connector_id)
+        sql.append("ORDER BY ts DESC")
+        sql.append("LIMIT ?")
+        params.append(limit)
+        cur.execute("\n".join(sql), params)
+        rows = cur.fetchall()
+        return [
+            ConnectorRunRecord(
+                id=int(r["id"]),
+                ts=str(r["ts"]),
+                connector_id=str(r["connector_id"]),
+                status=str(r["status"]),
+                synced_count=int(r["synced_count"]),
+                error_message=str(r["error_message"]) if r["error_message"] is not None else None,
+            )
+            for r in rows
+        ]
 
     def _rows_to_events(self, rows: list[sqlite3.Row]) -> list[EventRecord]:
         return [

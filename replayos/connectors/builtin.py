@@ -14,6 +14,9 @@ class GmailIMAPConnector(BaseConnector):
     connector_id = "gmail_imap"
     display_name = "Gmail (IMAP)"
 
+    def required_env_keys(self) -> tuple[str, ...]:
+        return ("GMAIL_IMAP_USER", "GMAIL_IMAP_APP_PASSWORD")
+
     def is_configured(self, env: dict[str, str]) -> bool:
         return bool(env.get("GMAIL_IMAP_USER") and env.get("GMAIL_IMAP_APP_PASSWORD"))
 
@@ -63,6 +66,9 @@ class SlackConnector(BaseConnector):
     connector_id = "slack"
     display_name = "Slack"
 
+    def required_env_keys(self) -> tuple[str, ...]:
+        return ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID")
+
     def is_configured(self, env: dict[str, str]) -> bool:
         return bool(env.get("SLACK_BOT_TOKEN") and env.get("SLACK_CHANNEL_ID"))
 
@@ -108,6 +114,9 @@ class SlackConnector(BaseConnector):
 class NotionConnector(BaseConnector):
     connector_id = "notion"
     display_name = "Notion"
+
+    def required_env_keys(self) -> tuple[str, ...]:
+        return ("NOTION_API_KEY",)
 
     def is_configured(self, env: dict[str, str]) -> bool:
         return bool(env.get("NOTION_API_KEY"))

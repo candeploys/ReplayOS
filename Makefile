@@ -1,4 +1,4 @@
-.PHONY: test e2e check doctor run run-bg stop status seed ask list-connectors sync-connectors capture-daemon backup restore migrate vacuum service-install service-uninstall service-status zip docker-build docker-up docker-down
+.PHONY: test e2e check doctor run run-bg stop status seed ask list-connectors connector-doctor sync-connectors capture-daemon import-browser-history backup restore migrate vacuum service-install service-uninstall service-status zip docker-build docker-up docker-down
 
 test:
 	python3 -m unittest discover -s tests -v
@@ -33,11 +33,17 @@ ask:
 list-connectors:
 	python3 -m replayos.cli --config config/replayos.toml --env .env list-connectors
 
+connector-doctor:
+	python3 -m replayos.cli --config config/replayos.toml --env .env connector-doctor
+
 sync-connectors:
 	python3 -m replayos.cli --config config/replayos.toml --env .env sync-connectors --limit 20
 
 capture-daemon:
 	python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon --interval 20
+
+import-browser-history:
+	python3 -m replayos.cli --config config/replayos.toml --env .env import-browser-history --browser all --limit 100 --since-days 30
 
 backup:
 	python3 -m replayos.cli --config config/replayos.toml --env .env backup-db

@@ -44,9 +44,10 @@ ReplayOS is a local-first memory + safe-action runtime with production controls.
 ## Super-Project Layer
 
 - Capture daemon (`replayos/capture_daemon.py`) for automatic timeline ingestion on macOS
-- Connector SDK + built-in Gmail/Slack/Notion connectors
+- Browser history importer (`replayos/browser_history.py`) for Safari/Chrome/Brave/Edge bootstrap
+- Connector SDK + built-in Gmail/Slack/Notion connectors + run history tracking
 - Plugin loader from `plugins/`
-- Browser dashboard (`web/`) for timeline, ask, actions, connectors, retention, metrics
+- Browser dashboard (`web/`) for timeline filters, ask references, actions, connectors, retention, metrics
 - Demo pack (`scripts/demo_one_command.sh`, `demo/README.md`)
 
 ## Data Governance

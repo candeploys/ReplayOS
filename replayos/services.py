@@ -40,16 +40,52 @@ class ReplayService:
         event_id = self.db.insert_event(source=source, title=title, content=content, metadata=metadata)
         return {"id": event_id}
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        source: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+    ) -> list[dict]:
         query = _clean_text(query, "query", max_len=MAX_QUESTION_LEN)
         safe_limit = _clamp(limit, 1, self.config.limits.max_search_limit)
-        rows = self.db.search_events(query, safe_limit)
+        safe_source = _clean_optional_text(source, "source", max_len=MAX_SOURCE_LEN)
+        safe_from_ts = _parse_optional_iso_ts(from_ts)
+        safe_to_ts = _parse_optional_iso_ts(to_ts)
+        rows = self.db.search_events(
+            query=query,
+            limit=safe_limit,
+            source=safe_source,
+            from_ts=safe_from_ts,
+            to_ts=safe_to_ts,
+        )
         return [asdict(row) for row in rows]
 
-    def recent(self, limit: int = 20) -> list[dict]:
+    def recent(
+        self,
+        limit: int = 20,
+        source: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+    ) -> list[dict]:
         safe_limit = _clamp(limit, 1, self.config.limits.max_recent_limit)
-        rows = self.db.recent_events(safe_limit)
+        safe_source = _clean_optional_text(source, "source", max_len=MAX_SOURCE_LEN)
+        safe_from_ts = _parse_optional_iso_ts(from_ts)
+        safe_to_ts = _parse_optional_iso_ts(to_ts)
+        rows = self.db.list_events(
+            limit=safe_limit,
+            source=safe_source,
+            from_ts=safe_from_ts,
+            to_ts=safe_to_ts,
+        )
         return [asdict(row) for row in rows]
+
+    def event_by_id(self, event_id: int) -> dict | None:
+        if event_id <= 0:
+            raise ValueError("event_id must be positive")
+        row = self.db.get_event_by_id(event_id)
+        return asdict(row) if row else None
 
     def ask(self, question: str, top_k: int = 5) -> dict:
         question = _clean_text(question, "question", max_len=MAX_QUESTION_LEN)
@@ -227,6 +263,12 @@ class ReplayService:
                         error="not_configured",
                     )
                 )
+                self.db.log_connector_run(
+                    connector_id=connector.connector_id,
+                    status="skipped",
+                    synced_count=0,
+                    error_message="not_configured",
+                )
                 continue
 
             try:
@@ -249,6 +291,12 @@ class ReplayService:
                         error=None,
                     )
                 )
+                self.db.log_connector_run(
+                    connector_id=connector.connector_id,
+                    status="ok",
+                    synced_count=synced,
+                    error_message=None,
+                )
             except Exception as exc:  # noqa: BLE001
                 results.append(
                     ConnectorSyncResult(
@@ -258,12 +306,24 @@ class ReplayService:
                         error=str(exc),
                     )
                 )
+                self.db.log_connector_run(
+                    connector_id=connector.connector_id,
+                    status="error",
+                    synced_count=0,
+                    error_message=str(exc),
+                )
 
         return {
             "ok": True,
             "total_synced": total_synced,
             "connectors": [asdict(item) for item in results],
         }
+
+    def recent_connector_runs(self, limit: int = 20, connector_id: str | None = None) -> list[dict]:
+        safe_limit = _clamp(limit, 1, 200)
+        safe_connector_id = _clean_optional_text(connector_id, "connector_id", max_len=MAX_SOURCE_LEN)
+        rows = self.db.recent_connector_runs(limit=safe_limit, connector_id=safe_connector_id)
+        return [asdict(row) for row in rows]
 
 
 def _sanitize_metadata(metadata: dict) -> dict:
@@ -298,6 +358,17 @@ def _clean_text(value: str, field: str, max_len: int) -> str:
     return text
 
 
+def _clean_optional_text(value: str | None, field: str, max_len: int) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) > max_len:
+        raise ValueError(f"{field} exceeds max length ({max_len})")
+    return text
+
+
 def _clamp(value: int, minimum: int, maximum: int) -> int:
     if value < minimum:
         return minimum
@@ -324,3 +395,12 @@ def _parse_iso_ts(value: str) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _parse_optional_iso_ts(value: str | None) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    return _parse_iso_ts(raw)

@@ -10,7 +10,7 @@
     <main class="layout">
       <header class="hero">
         <h1>ReplayOS Control Panel</h1>
-        <p>Timeline, AI Ask, GhostRun actions, connector sync, retention, and alerts.</p>
+        <p>Timeline filters, AI Ask references, GhostRun actions, connector runs, retention, and metrics.</p>
       </header>
 
       <section class="card auth-card">
@@ -41,12 +41,23 @@
           <textarea id="askInput" rows="3" placeholder="Summarize my timeline briefly"></textarea>
           <button id="askBtn">Ask</button>
           <pre id="askOut"></pre>
+          <h3 class="subhead">References</h3>
+          <div id="askRefs" class="stack"></div>
         </article>
 
         <article class="card">
           <h2>Recent Timeline</h2>
-          <button id="refreshTimelineBtn">Refresh</button>
+          <div class="filter-grid">
+            <input id="timelineSource" placeholder="Source filter (e.g. slack)" />
+            <input id="timelineFrom" type="datetime-local" />
+            <input id="timelineTo" type="datetime-local" />
+          </div>
+          <div class="row">
+            <button id="refreshTimelineBtn">Refresh</button>
+            <button id="clearFiltersBtn">Clear Filters</button>
+          </div>
           <pre id="timelineOut"></pre>
+          <div id="timelineList" class="stack"></div>
         </article>
       </section>
 
@@ -60,6 +71,8 @@
             <button id="noteExecBtn">Execute</button>
           </div>
           <pre id="noteOut"></pre>
+          <h3 class="subhead">Last Action</h3>
+          <pre id="actionStateOut"></pre>
         </article>
 
         <article class="card">
@@ -73,13 +86,23 @@
       <section class="grid two-col">
         <article class="card">
           <h2>Connectors</h2>
-          <div class="row">
+          <div class="trio">
             <button id="listConnectorsBtn">List</button>
             <button id="syncConnectorsBtn">Sync</button>
+            <button id="doctorConnectorsBtn">Doctor</button>
           </div>
           <pre id="connectorsOut"></pre>
         </article>
 
+        <article class="card">
+          <h2>Connector Sync Runs</h2>
+          <button id="refreshConnectorRunsBtn">Refresh Runs</button>
+          <pre id="connectorRunsOut"></pre>
+          <div id="connectorRunsList" class="stack"></div>
+        </article>
+      </section>
+
+      <section class="grid two-col">
         <article class="card">
           <h2>Data Policy</h2>
           <button id="exportBtn">Export Data</button>
@@ -89,12 +112,12 @@
           </div>
           <pre id="dataOut"></pre>
         </article>
-      </section>
 
-      <section class="card">
-        <h2>Metrics</h2>
-        <button id="metricsBtn">Refresh Metrics</button>
-        <pre id="metricsOut"></pre>
+        <article class="card">
+          <h2>Metrics</h2>
+          <button id="metricsBtn">Refresh Metrics</button>
+          <pre id="metricsOut"></pre>
+        </article>
       </section>
     </main>
 

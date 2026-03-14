@@ -10,8 +10,10 @@ A plugin file must define:
 - `build_connector() -> BaseConnector`
 
 `BaseConnector` methods:
+- `required_env_keys(self) -> tuple[str, ...]`
 - `is_configured(env: dict[str, str]) -> bool`
 - `pull_events(env: dict[str, str], limit: int = 20) -> list[dict]`
+- `doctor(env: dict[str, str]) -> dict`
 
 Each returned event should have:
 - `source`
@@ -19,14 +21,28 @@ Each returned event should have:
 - `content`
 - optional `metadata`
 
-## Example
+## Built-in Plugin Examples
 
-See:
 - `plugins/example_connector.py`
+- `plugins/rss_connector.py`
+- `plugins/local_json_connector.py`
 
-To enable example plugin:
+## Validate Connector Setup
+
 ```bash
-export EXAMPLE_CONNECTOR_ENABLED=true
-python3 -m replayos.cli --config config/replayos.toml --env .env list-connectors
+python3 -m replayos.cli --config config/replayos.toml --env .env connector-doctor
+```
+
+## Sync Plugin Data
+
+```bash
 python3 -m replayos.cli --config config/replayos.toml --env .env sync-connectors --limit 5
+```
+
+## Example Env Vars
+
+```bash
+EXAMPLE_CONNECTOR_ENABLED=true
+RSS_CONNECTOR_FEED_URL=https://example.com/feed.xml
+LOCAL_JSON_EVENTS_PATH=/absolute/path/events.json
 ```

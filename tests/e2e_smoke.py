@@ -180,9 +180,20 @@ def main() -> None:
                 },
             )
             assert status == 201 and payload.get("ok") is True
+            event_id = int(payload.get("id", 0))
+            assert event_id > 0
 
             status, payload = http_json("GET", f"{base}/api/search?q=ReplayOS", token=token)
             assert status == 200 and isinstance(payload.get("items"), list)
+
+            status, payload = http_json("GET", f"{base}/api/search?q=ReplayOS&source=e2e", token=token)
+            assert status == 200 and isinstance(payload.get("items"), list)
+
+            status, payload = http_json("GET", f"{base}/api/events/recent?source=e2e&limit=5", token=token)
+            assert status == 200 and isinstance(payload.get("items"), list)
+
+            status, payload = http_json("GET", f"{base}/api/events/by-id?id={event_id}", token=token)
+            assert status == 200 and payload.get("ok") is True and payload.get("event", {}).get("id") == event_id
 
             status, payload = http_json(
                 "POST",
@@ -191,6 +202,12 @@ def main() -> None:
                 payload={"question": "Summarize", "top_k": 3},
             )
             assert status == 200 and payload.get("ok") is True
+
+            status, payload = http_json("GET", f"{base}/api/connectors", token=token)
+            assert status == 200 and payload.get("ok") is True
+
+            status, payload = http_json("GET", f"{base}/api/connectors/runs?limit=5", token=token)
+            assert status == 200 and payload.get("ok") is True and isinstance(payload.get("runs"), list)
 
             status, payload = http_json(
                 "POST",

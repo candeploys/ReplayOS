@@ -210,7 +210,16 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 query = q.get("q", [""])[0].strip()
                 limit_str = q.get("limit", [str(self.context.config.limits.default_search_limit)])[0]
                 limit = int(limit_str) if limit_str.isdigit() else self.context.config.limits.default_search_limit
-                items = self.context.service.search(query, limit=limit)
+                source = q.get("source", [""])[0].strip() or None
+                from_ts = q.get("from_ts", [""])[0].strip() or None
+                to_ts = q.get("to_ts", [""])[0].strip() or None
+                items = self.context.service.search(
+                    query=query,
+                    limit=limit,
+                    source=source,
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                )
                 status = 200
                 self._json(status, {"items": items}, request_id=request_id)
                 return
@@ -219,9 +228,33 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 q = parse_qs(parsed.query)
                 limit_str = q.get("limit", [str(self.context.config.limits.default_recent_limit)])[0]
                 limit = int(limit_str) if limit_str.isdigit() else self.context.config.limits.default_recent_limit
-                items = self.context.service.recent(limit=limit)
+                source = q.get("source", [""])[0].strip() or None
+                from_ts = q.get("from_ts", [""])[0].strip() or None
+                to_ts = q.get("to_ts", [""])[0].strip() or None
+                items = self.context.service.recent(
+                    limit=limit,
+                    source=source,
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                )
                 status = 200
                 self._json(status, {"items": items}, request_id=request_id)
+                return
+
+            if parsed.path == "/api/events/by-id":
+                q = parse_qs(parsed.query)
+                event_id_raw = q.get("id", [""])[0].strip()
+                if not event_id_raw.isdigit():
+                    status = 400
+                    self._json(status, {"error": "id must be a positive integer"}, request_id=request_id)
+                    return
+                event = self.context.service.event_by_id(int(event_id_raw))
+                if event is None:
+                    status = 404
+                    self._json(status, {"error": "Event not found"}, request_id=request_id)
+                    return
+                status = 200
+                self._json(status, {"ok": True, "event": event}, request_id=request_id)
                 return
 
             if parsed.path == "/api/data/export":
@@ -256,11 +289,22 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 return
 
             if parsed.path == "/api/connectors":
+                recent_runs = self.context.service.recent_connector_runs(limit=200)
+                last_by_connector: dict[str, dict] = {}
+                for run in recent_runs:
+                    connector_id = str(run.get("connector_id", ""))
+                    if connector_id and connector_id not in last_by_connector:
+                        last_by_connector[connector_id] = run
                 connectors = [
                     {
                         "id": c.connector_id,
                         "name": c.display_name,
                         "configured": c.is_configured(self.context.connector_env),
+                        "required_env_keys": list(c.required_env_keys()),
+                        "missing_env_keys": [
+                            key for key in c.required_env_keys() if not str(self.context.connector_env.get(key, "")).strip()
+                        ],
+                        "last_run": last_by_connector.get(c.connector_id),
                     }
                     for c in self.context.connectors
                 ]
@@ -268,14 +312,32 @@ class ReplayHandler(BaseHTTPRequestHandler):
                 self._json(status, {"ok": True, "connectors": connectors}, request_id=request_id)
                 return
 
+            if parsed.path == "/api/connectors/runs":
+                q = parse_qs(parsed.query)
+                limit_str = q.get("limit", ["20"])[0]
+                limit = int(limit_str) if limit_str.isdigit() else 20
+                connector_id = q.get("connector_id", [""])[0].strip() or None
+                runs = self.context.service.recent_connector_runs(
+                    limit=max(1, min(limit, 200)),
+                    connector_id=connector_id,
+                )
+                status = 200
+                self._json(status, {"ok": True, "runs": runs}, request_id=request_id)
+                return
+
             status = 404
             self._json(status, {"error": "Not found"}, request_id=request_id)
         except ValueError as exc:
             status = 400
             self._json(status, {"error": str(exc)}, request_id=request_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             status = 500
-            self._json(status, {"error": f"Unhandled server error: {exc}"}, request_id=request_id)
+            if self.context is not None:
+                self.context.logger.exception(
+                    "Unhandled GET error",
+                    extra={"request_id": request_id, "path": path_for_log, "method": self.command},
+                )
+            self._json(status, {"error": "Internal server error"}, request_id=request_id)
         finally:
             self._log_request(status, started, request_id, path_for_log)
 
@@ -402,9 +464,14 @@ class ReplayHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             status = 400
             self._json(status, {"error": str(exc)}, request_id=request_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             status = 500
-            self._json(status, {"error": f"Unhandled server error: {exc}"}, request_id=request_id)
+            if self.context is not None:
+                self.context.logger.exception(
+                    "Unhandled POST error",
+                    extra={"request_id": request_id, "path": path_for_log, "method": self.command},
+                )
+            self._json(status, {"error": "Internal server error"}, request_id=request_id)
         finally:
             self._log_request(status, started, request_id, path_for_log)
 

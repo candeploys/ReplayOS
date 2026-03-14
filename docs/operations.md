@@ -55,9 +55,14 @@ Recommended watches:
 
 ## Connector Operations
 
-List configured connectors:
+List connectors:
 ```bash
 make list-connectors
+```
+
+Validate connector configuration:
+```bash
+make connector-doctor
 ```
 
 Sync connectors:
@@ -65,14 +70,34 @@ Sync connectors:
 make sync-connectors
 ```
 
-## Capture Daemon
+Read connector run history:
+```bash
+curl -sS http://127.0.0.1:8787/api/connectors/runs?limit=20 \
+  -H "Authorization: Bearer <token>"
+```
 
-Run daemon (macOS):
+## Capture and Timeline Ingestion
+
+Run capture daemon (macOS):
 ```bash
 make capture-daemon
 ```
 
-Or with screenshots:
+Run capture daemon with privacy mode and app filtering:
 ```bash
-python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon --capture-screenshot
+python3 -m replayos.cli --config config/replayos.toml --env .env capture-daemon \
+  --privacy-mode \
+  --include-app "Google Chrome" \
+  --exclude-app "1Password"
+```
+
+Import browser history:
+```bash
+make import-browser-history
+```
+
+Direct CLI example:
+```bash
+python3 -m replayos.cli --config config/replayos.toml --env .env import-browser-history \
+  --browser safari --browser chrome --limit 200 --since-days 14
 ```

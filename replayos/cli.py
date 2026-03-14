@@ -12,6 +12,7 @@ import sys
 import time
 
 from .capture_daemon import run_capture_daemon
+from .browser_history import import_browser_history
 from .config import load_config, load_env_file
 from .connectors.registry import all_connectors
 from .db import ReplayDB
@@ -95,11 +96,23 @@ def main() -> None:
     p_sync.add_argument("--limit", type=int, default=20, help="Per-connector item limit")
 
     sub.add_parser("list-connectors", help="List built-in and plugin connectors")
+    sub.add_parser("connector-doctor", help="Validate connector configuration and missing env keys")
 
     p_capture = sub.add_parser("capture-daemon", help="Run macOS capture daemon")
     p_capture.add_argument("--interval", type=int, default=15, help="Capture interval in seconds")
     p_capture.add_argument("--api-base-url", default="", help="Override ReplayOS API base URL")
     p_capture.add_argument("--capture-screenshot", action="store_true", help="Capture screenshots with each event")
+    p_capture.add_argument("--screenshot-dir", default="captures", help="Directory for screenshots")
+    p_capture.add_argument("--privacy-mode", action="store_true", help="Redact window title and URL in captures")
+    p_capture.add_argument("--include-app", action="append", default=[], help="Only capture this app (repeatable)")
+    p_capture.add_argument("--exclude-app", action="append", default=[], help="Skip this app (repeatable)")
+
+    p_hist = sub.add_parser("import-browser-history", help="Import browser history into timeline")
+    p_hist.add_argument("--api-base-url", default="", help="Override ReplayOS API base URL")
+    p_hist.add_argument("--browser", action="append", default=[], help="Browser id: safari/chrome/brave/edge/all")
+    p_hist.add_argument("--limit", type=int, default=100, help="Max history rows per browser")
+    p_hist.add_argument("--since-days", type=int, default=30, help="Only import visits newer than N days")
+    p_hist.add_argument("--privacy-mode", action="store_true", help="Redact URL/title content in imported rows")
 
     args = parser.parse_args()
 
@@ -264,6 +277,22 @@ def main() -> None:
             print(f"- {connector.connector_id}: {connector.display_name} (configured={configured})")
         return
 
+    if args.command == "connector-doctor":
+        report = [connector.doctor(runtime_env) for connector in connectors]
+        configured = sum(1 for item in report if item.get("configured"))
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "total_connectors": len(report),
+                    "configured_connectors": configured,
+                    "connectors": report,
+                },
+                indent=2,
+            )
+        )
+        return
+
     if args.command == "capture-daemon":
         api_key = _parse_first_api_key(runtime_env.get("REPLAYOS_API_KEYS", ""))
         if not api_key:
@@ -275,7 +304,29 @@ def main() -> None:
             api_key=api_key,
             interval_seconds=max(1, int(args.interval)),
             capture_screenshot=bool(args.capture_screenshot),
+            screenshot_dir=Path(args.screenshot_dir),
+            privacy_mode=bool(args.privacy_mode),
+            include_apps=tuple(args.include_app),
+            exclude_apps=tuple(args.exclude_app),
         )
+        return
+
+    if args.command == "import-browser-history":
+        api_key = _parse_first_api_key(runtime_env.get("REPLAYOS_API_KEYS", ""))
+        if not api_key:
+            raise RuntimeError("REPLAYOS_API_KEYS is required for import-browser-history")
+
+        api_base_url = args.api_base_url.strip() or f"http://{config.server.host}:{config.server.port}"
+        selected = tuple(args.browser) if args.browser else ("all",)
+        out = import_browser_history(
+            api_base_url=api_base_url,
+            api_key=api_key,
+            browsers=selected,
+            limit_per_browser=max(1, min(int(args.limit), 500)),
+            since_days=max(1, min(int(args.since_days), 3650)),
+            privacy_mode=bool(args.privacy_mode),
+        )
+        print(json.dumps(out, indent=2))
         return
 
     if args.command == "backup-db":
